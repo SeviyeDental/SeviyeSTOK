@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seviye Stok & Bulut Çıkış Sistemi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    
+    <!-- FIREBASE BULUT VERİTABANI BAĞLANTILARI -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+    <style>
+        .drag-over { border: 2px dashed #3b82f6; background-color: #eff6ff; }
+        .draggable-item { cursor: grab; }
+        .draggable-item:active { cursor: grabbing; }
+        .search-row { transition: all 0.2s ease-in-out; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .ai-scanning { background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #3b82f6 100%); background-size: 200% auto; animation: shine 2s linear infinite; }
+        @keyframes shine { to { background-position: 200% center; } }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans h-screen w-screen flex overflow-hidden m-0 p-0">
+
+    <div id="mobile-overlay" onclick="toggleMobileMenu()" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-40 hidden md:hidden"></div>
+
+    <!-- SOL MENÜ -->
+    <div id="sidebar" class="w-64 bg-gray-900 text-white flex flex-col justify-between shadow-xl fixed h-full z-50 transform -translate-x-full md:translate-x-0 md:relative shrink-0">
+        <div class="flex-1 overflow-y-auto">
+            <div class="p-6 border-b border-gray-800 bg-gray-950 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-cloud text-blue-500 text-2xl"></i>
+                    <div>
+                        <h2 class="font-bold text-lg leading-tight">Seviye Stok</h2>
+                        <span class="text-[10px] text-emerald-400 font-bold tracking-widest"><i class="fa-solid fa-circle text-[8px] animate-pulse"></i> CLOUD V8.1</span>
+                    </div>
+                </div>
+                <button onclick="toggleMobileMenu()" class="md:hidden text-gray-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <nav class="p-4 space-y-2">
+                <button onclick="switchPage('dashboard')" id="nav-dashboard" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg bg-blue-600 text-white font-medium transition-all text-left shadow"><i class="fa-solid fa-chart-pie w-5 text-center"></i><span>Panel Özeti</span></button>
+                <button onclick="switchPage('stoklar')" id="nav-stoklar" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white font-medium transition-all text-left"><i class="fa-solid fa-boxes-stacked w-5 text-center"></i><span>Kategorili Stoklar</span></button>
+                <button onclick="switchPage('cikis')" id="nav-cikis" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-emerald-400 hover:bg-gray-800 hover:text-emerald-300 font-bold transition-all text-left border border-gray-800"><i class="fa-solid fa-cart-arrow-down w-5 text-center"></i><span>Saha Çıkış (Sepet)</span></button>
+                <button onclick="switchPage('klinik')" id="nav-klinik" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-amber-400 hover:bg-gray-800 hover:text-amber-300 font-medium transition-all text-left"><i class="fa-solid fa-user-doctor w-5 text-center"></i><span>Doktor/Klinik Raporları</span></button>
+                <button onclick="switchPage('gecmis')" id="nav-gecmis" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white font-medium transition-all text-left"><i class="fa-solid fa-clock-rotate-left w-5 text-center"></i><span>İşlem Geçmişi (Log)</span></button>
+                <button onclick="switchPage('veri')" id="nav-veri" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white font-medium transition-all text-left"><i class="fa-solid fa-database w-5 text-center"></i><span>Sistem Ayarları</span></button>
+            </nav>
+        </div>
+        
+        <div class="p-4 border-t border-gray-800 bg-gray-950 flex items-center space-x-3 text-sm text-gray-400 shrink-0">
+            <i class="fa-solid fa-wifi text-green-500 text-base" id="wifi-icon"></i>
+            <div>
+                <p class="font-semibold text-white">Ekip Modu</p>
+                <p class="text-xs text-blue-400" id="status-text">Sunucuya Bağlanılıyor...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- SAĞ İÇERİK ALANI -->
+    <div class="flex-1 flex flex-col h-full bg-gray-100 relative overflow-hidden">
+        
+        <!-- YÜKLEME EKRANI (FIREBASE) -->
+        <div id="db-loader" class="absolute inset-0 bg-white z-[200] flex flex-col items-center justify-center">
+            <i class="fa-solid fa-cloud-arrow-down text-6xl text-blue-500 mb-4 animate-bounce"></i>
+            <h2 class="text-2xl font-bold text-gray-800">Buluta Bağlanılıyor...</h2>
+            <p class="text-gray-500 mt-2">Verileriniz senkronize ediliyor, lütfen bekleyin.</p>
+        </div>
+
+        <div id="ai-loader" class="absolute inset-0 bg-gray-900 bg-opacity-80 z-[100] hidden flex flex-col items-center justify-center text-white backdrop-blur-sm">
+            <i class="fa-solid fa-microchip text-4xl md:text-6xl text-blue-400 mb-4 animate-pulse"></i>
+            <h2 class="text-xl md:text-2xl font-bold mb-2">Kağıt Analiz Ediliyor...</h2>
+            <p id="ai-status" class="text-xs md:text-sm text-gray-300 font-mono mb-6 text-center px-4">Lütfen Bekleyin...</p>
+            <div class="w-48 md:w-64 h-2 bg-gray-700 rounded-full overflow-hidden"><div id="ai-progress-bar" class="h-full ai-scanning" style="width: 10%;"></div></div>
+        </div>
+
+        <!-- ÜST BAR -->
+        <div class="bg-white p-4 md:p-6 shadow-sm border-b border-gray-200 z-10 flex shrink-0 justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <button onclick="toggleMobileMenu()" class="md:hidden text-gray-600 text-2xl focus:outline-none"><i class="fa-solid fa-bars"></i></button>
+                <h1 id="page-title" class="text-lg md:text-2xl font-bold text-gray-800">Panel Özeti</h1>
+            </div>
+            <span id="sync-badge" class="text-[10px] md:text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full flex items-center"><i class="fa-solid fa-rotate mr-1 animate-spin"></i> Bulut Senkronizasyonu</span>
+        </div>
+
+        <div class="p-3 md:p-6 overflow-y-auto flex-1 relative w-full">
+
+            <!-- SAYFA 1: DASHBOARD -->
+            <div id="page-dashboard" class="page-content block space-y-4 md:space-y-6">
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
+                    <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-center justify-between text-center md:text-left">
+                        <div><p class="text-[10px] md:text-sm text-gray-400 font-semibold uppercase">Ürün Çeşidi</p><h3 id="stat-total-types" class="text-xl md:text-3xl font-bold text-gray-800 mt-1">0</h3></div>
+                        <div class="w-8 h-8 md:w-12 md:h-12 mt-2 md:mt-0 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 text-lg md:text-xl"><i class="fa-solid fa-box"></i></div>
+                    </div>
+                    <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-center justify-between text-center md:text-left">
+                        <div><p class="text-[10px] md:text-sm text-gray-400 font-semibold uppercase">Genel Stok</p><h3 id="stat-total-items" class="text-xl md:text-3xl font-bold text-blue-600 mt-1">0</h3></div>
+                        <div class="w-8 h-8 md:w-12 md:h-12 mt-2 md:mt-0 bg-blue-100 rounded-lg flex items-center justify-center text-blue-700 text-lg md:text-xl"><i class="fa-solid fa-warehouse"></i></div>
+                    </div>
+                    <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-center justify-between text-center md:text-left col-span-2 md:col-span-1">
+                        <div><p class="text-[10px] md:text-sm text-gray-400 font-semibold uppercase">Bulut İşlemi</p><h3 id="stat-total-logs" class="text-xl md:text-3xl font-bold text-purple-600 mt-1">0</h3></div>
+                        <div class="w-8 h-8 md:w-12 md:h-12 mt-2 md:mt-0 bg-purple-50 rounded-lg flex items-center justify-center text-purple-600 text-lg md:text-xl"><i class="fa-solid fa-cloud"></i></div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
+                    <h3 class="text-sm md:text-lg font-bold text-gray-800 mb-4">Depolara Göre Dağılım</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="depot-bars-container"></div>
+                </div>
+            </div>
+
+            <!-- SAYFA 2: STOK LİSTESİ -->
+            <div id="page-stoklar" class="page-content hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[80vh] md:h-auto">
+                <div class="p-3 md:p-6 border-b border-gray-200 bg-gray-50 flex items-center justify-between shrink-0">
+                    <div class="relative w-full">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-sm"></i>
+                        <input type="text" id="stokSearch" oninput="filterTable('stokSearch', 'stok-main-body')" placeholder="Bulutta ürün adı, modeli ara..." class="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs md:text-sm">
+                    </div>
+                </div>
+                <div class="overflow-y-auto flex-1 w-full overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[600px]">
+                        <thead class="sticky top-0 bg-white shadow-sm border-b border-gray-200 z-10">
+                            <tr class="text-gray-600 text-[10px] md:text-xs font-bold uppercase tracking-wider">
+                                <th class="p-3 md:p-4 pl-4 md:pl-6 w-1/3">Kategori / Ürün</th><th class="p-2 md:p-4 text-center">Adsm</th><th class="p-2 md:p-4 text-center">Maku</th><th class="p-2 md:p-4 text-center">Sdu</th><th class="p-2 md:p-4 text-center border-r border-gray-200">Depo</th><th class="p-2 md:p-4 text-center text-blue-600 bg-blue-50">Top.</th><th class="p-2 md:p-4 text-center bg-gray-50">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stok-main-body" class="divide-y divide-gray-100 text-xs md:text-sm text-gray-700 bg-gray-50"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SAYFA 3: SAHA ÇIKIŞ (SEPET) -->
+            <div id="page-cikis" class="page-content hidden flex flex-col md:flex-row gap-4 md:space-x-6 h-auto md:h-[80vh]">
+                <div class="w-full md:w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[40vh] md:h-full">
+                    <div class="p-3 md:p-4 border-b border-gray-200 bg-emerald-50 text-emerald-800 font-bold flex justify-between items-center shrink-0 text-sm md:text-base">
+                        <span>1. Ürünü Bul</span><i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                    <div class="p-2 md:p-3 bg-gray-50 border-b border-gray-200 relative shrink-0">
+                        <i class="fa-solid fa-search absolute left-4 md:left-6 top-4 md:top-5 text-gray-400 text-xs"></i>
+                        <input type="text" id="dragSearch" oninput="filterTable('dragSearch', 'drag-list-body')" placeholder="Ara ve sepete ekle..." class="w-full pl-8 pr-3 py-1.5 md:py-2 text-xs md:text-sm border border-gray-300 rounded shadow-inner outline-none focus:ring-1 focus:ring-emerald-500">
+                    </div>
+                    <div class="overflow-y-auto flex-1 bg-gray-50">
+                        <table class="w-full text-left text-xs md:text-sm"><tbody id="drag-list-body" class="divide-y divide-gray-100"></tbody></table>
+                    </div>
+                </div>
+
+                <div class="w-full md:w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col relative transition-all h-[55vh] md:h-full" id="drop-zone" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">
+                    <div class="p-3 md:p-4 border-b border-gray-200 bg-blue-600 text-white font-bold flex flex-wrap gap-2 justify-between items-center shrink-0 rounded-t-xl text-sm md:text-base">
+                        <span>2. Çıkış Sepeti</span>
+                        <div class="flex items-center space-x-2">
+                            <input type="file" id="ocrInput" accept="image/*" capture="environment" class="hidden" onchange="handleOCR(event)">
+                            <button onclick="document.getElementById('ocrInput').click()" class="bg-blue-800 hover:bg-blue-900 px-2 py-1 md:px-3 md:py-1 rounded text-[10px] md:text-xs font-bold shadow transition-colors flex items-center">
+                                <i class="fa-solid fa-camera mr-1 md:mr-2"></i> Fiş Oku
+                            </button>
+                            <span id="cart-count-badge" class="bg-white text-blue-600 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-bold shadow-sm">0 Ürün</span>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-2 md:p-4 bg-gray-50 relative">
+                        <div id="empty-cart-msg" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pointer-events-none p-4 text-center">
+                            <i class="fa-solid fa-cart-arrow-down text-4xl md:text-6xl mb-2 md:mb-4 drop-icon transition-colors"></i><p class="text-xs md:text-sm">Ürünleri listeden <b class="text-emerald-500">+ Ekle</b> butonuna basarak sepetinize atın.</p>
+                        </div>
+                        <div id="cart-items-container" class="space-y-2 md:space-y-3 relative z-10"></div>
+                    </div>
+                    <div class="p-3 md:p-4 bg-white border-t border-gray-200 rounded-b-xl shrink-0 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)]">
+                        <div class="mb-2 md:mb-4"><input type="text" id="batch-recipient" placeholder="Klinik / Doktor Adı (Zorunlu)" class="w-full border border-gray-300 rounded md:rounded-lg px-2 py-1.5 md:px-3 md:py-2 outline-none focus:ring-2 focus:ring-blue-500 bg-amber-50 text-xs md:text-sm font-bold"></div>
+                        <div class="mb-2 md:mb-4"><input type="text" id="batch-note" placeholder="Not veya Hasta Adı (Opsiyonel)" class="w-full border border-gray-300 rounded md:rounded-lg px-2 py-1.5 md:px-3 md:py-1.5 text-[10px] md:text-xs outline-none focus:ring-2 focus:ring-gray-300 bg-amber-50"></div>
+                        <button onclick="confirmBatchCheckout()" class="w-full bg-blue-600 text-white font-bold py-2 md:py-3 rounded md:rounded-lg hover:bg-blue-700 shadow-md md:shadow-lg transition-all active:scale-95 flex justify-center items-center text-sm md:text-base">
+                            <i class="fa-solid fa-check-double mr-2"></i> Çıkışı Onayla
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SAYFA 4: KLİNİK / DOKTOR RAPORLARI -->
+            <div id="page-klinik" class="page-content hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[80vh]">
+                <div class="p-3 md:p-4 bg-amber-50 border-b border-amber-200 flex flex-col md:flex-row gap-2 justify-between items-center shrink-0">
+                    <span class="text-[10px] md:text-sm text-amber-800 font-semibold"><i class="fa-solid fa-circle-info mr-1"></i>Bulut Cari Çıkış Raporları</span>
+                    <input type="text" id="klinikSearch" oninput="renderKlinikRapor()" placeholder="Doktor Ara..." class="w-full md:w-auto border border-amber-300 rounded px-3 py-1.5 text-xs md:text-sm outline-none focus:ring-2 focus:ring-amber-400">
+                </div>
+                <div class="overflow-y-auto flex-1 p-4 md:p-6"><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6" id="klinik-cards-container"></div></div>
+            </div>
+
+            <!-- SAYFA 5: İŞLEM GEÇMİŞİ -->
+            <div id="page-gecmis" class="page-content hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[80vh]">
+                <div class="p-3 md:p-4 bg-gray-50 border-b border-gray-200 flex shrink-0">
+                    <input type="text" id="logSearch" oninput="renderLogs()" placeholder="Bulutta işlem veya doktor ara..." class="w-full md:w-1/2 border border-gray-300 rounded px-3 py-2 text-xs md:text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="overflow-y-auto flex-1 overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[500px]">
+                        <thead class="sticky top-0 bg-gray-100 shadow-sm border-b border-gray-200 z-10">
+                            <tr class="text-gray-600 text-[10px] md:text-xs font-bold uppercase tracking-wider">
+                                <th class="p-3 md:p-4 pl-4 md:pl-6">Tarih</th><th class="p-3 md:p-4">Klinik</th><th class="p-3 md:p-4">Ürün</th><th class="p-3 md:p-4">Detay</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-main-body" class="divide-y divide-gray-200 text-xs md:text-sm text-gray-700"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SAYFA 6: VERİ YÖNETİMİ -->
+            <div id="page-veri" class="page-content hidden space-y-4 md:space-y-6">
+                <div class="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-200 text-center">
+                    <div class="w-12 h-12 md:w-16 md:h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-2xl md:text-3xl mx-auto mb-4"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                    <h3 class="text-lg md:text-2xl font-bold text-gray-800 mb-2">JSON Dosyasını Buluta Aktar</h3>
+                    <p class="text-gray-500 text-xs md:text-sm mb-6 max-w-lg mx-auto text-left">
+                        Bulut sistemi aktiftir. Eski yedek <b>JSON</b> dosyanı buradan seçerek tüm geçmişini saniyeler içinde buluta (ekibine) aktarabilirsin.
+                    </p>
+                    <input type="file" id="backupFileInput" accept=".json" class="hidden" onchange="handleBackupUpload(event)">
+                    <button onclick="document.getElementById('backupFileInput').click()" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 md:px-8 py-2 md:py-3 rounded-lg font-bold shadow-lg transition-all active:scale-95 text-sm md:text-base">
+                        <i class="fa-solid fa-file-import mr-2"></i> Eski JSON Dosyasını Seç
+                    </button>
+                    <p id="upload-status-msg" class="text-xs md:text-sm font-semibold mt-4 hidden"></p>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- MODALLAR -->
+    <div id="stockAddModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center hidden z-[100] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-[400px] overflow-hidden">
+            <div class="p-4 bg-green-600 text-white font-bold flex justify-between items-center">
+                <span><i class="fa-solid fa-boxes-packing mr-2"></i> Buluta Stok Ekle</span><button onclick="closeStockAddModal()"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div><p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Ürün</p><p id="add-modal-itemName" class="text-gray-900 font-semibold bg-gray-100 p-2 rounded text-xs md:text-sm"></p></div>
+                <div><label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Depo</label><select id="add-modal-depo" class="w-full border rounded px-3 py-2 text-sm"><option value="Adsm">Adsm Deposu</option><option value="Maku">Maku Deposu</option><option value="Sdu">Sdu Deposu</option><option value="Depo" selected>Merkez Depo</option></select></div>
+                <div><label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Adet</label><input type="number" id="add-modal-qty" min="1" value="1" class="w-full border rounded px-3 py-2 text-lg font-bold"></div>
+            </div>
+            <div class="p-3 bg-gray-50 border-t flex justify-end space-x-2"><button onclick="closeStockAddModal()" class="px-4 py-2 border rounded text-sm">İptal</button><button onclick="confirmStockAdd()" class="px-4 py-2 bg-green-600 text-white rounded font-bold text-sm">Kaydet</button></div>
+        </div>
+    </div>
+
+    <div id="aiErrorModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center hidden z-[100] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-[500px] overflow-hidden">
+            <div class="p-4 bg-amber-500 text-white font-bold flex justify-between items-center"><span>Ürün Bulunamadı</span><button onclick="document.getElementById('aiErrorModal').classList.add('hidden')"><i class="fa-solid fa-xmark text-xl"></i></button></div>
+            <div class="p-5"><p class="text-xs md:text-sm text-gray-700 mb-4">Okunan kelimelerle stok isimleri eşleşmedi. El yazısı çok karmaşık olabilir.</p><p class="text-[10px] font-bold text-gray-500 mb-1">Okunan Metin:</p><div class="bg-gray-100 border p-2 text-xs font-mono text-gray-800 whitespace-pre-wrap max-h-32 overflow-y-auto" id="ai-raw-text"></div></div>
+            <div class="p-3 bg-gray-50 border-t text-right"><button onclick="document.getElementById('aiErrorModal').classList.add('hidden')" class="px-4 py-1.5 bg-gray-600 text-white rounded text-sm">Kapat</button></div>
+        </div>
+    </div>
+
+    <script>
+        const RAW_STOCK_DATA = `Ti Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh2 RP|0|10|10|0|20\nTi Base Lock&Hex|BL Açılı Ti-Base Lock Abutment Gh3 SP|0|0|0|0|0\nBİLİM İMPLANT|PBL4108 BL Ø4.1*8 mm implant RP|0|8|9|50|67\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh2 NP|1|7|7|5|20\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh3 NP|16|21|12|53|102\nİyileşim Başlığı|RN-TL İyileşim Başlığı|0|0|17|0|17\nBİLİM İMPLANT|PBL2910 BL Ø2.9*10mm implant SP|0|0|7|0|7\nGREFT&MEMBRAN|OPIOSS GREFT|0|0|5|0|5\nGeçici Abutment|BL Multi Unit NoLock Geçici Abutment NP&RP|2|0|13|0|15\nÖlçü & Laboratuvar|BL Multi-Unit Dijital Analog NP&RP|6|0|21|0|27\nGeçici Abutment|BL Geçici Lock Abutmenti Gh1 RP|0|1|3|0|4\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh2 AH7 RP|0|0|1|0|1\nB6 PRO İMPLANT|BL418 4.1*8 B6 pro implant RP|0|0|3|10|13\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh4 RP|15|8|13|-1|35\nDüz&Açılı Multi Unit|DÜZ MULTI UNIT ABUTMANT Q4.5GH1 NP (SARI)|12|19|1|33|65\nMulti Ti Base|RN-TL Multi Unit Ti-Base Nolock Abutment Ah5.5 NP&RP|0|0|2|0|2\nTi Base Lock&Hex|BL Açılı Ti-Base Lock Abutment Ah5.5 Gh1 RP|0|1|4|0|5\nBİLİM İMPLANT|PBL4110 BL Ø4.1*10 mm implant RP|11|5|26|0|42\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh1 RP|10|0|4|37|51\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh2 RP|12|0|0|0|12\nBİLİM İMPLANT|PBL4114 BL Ø4.1*14 mm İmplant RP|0|0|2|0|2\nMulti Ti Base|BL Düz Multi Unit Ti-Base lock Abutment Ah3.5 NP&RP|0|0|3|0|3\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh1 AH7 NP|27|0|27|0|54\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh4 RP|0|0|0|0|0\nLocator düz&açılı|BL Açılı Locator Abutment A15° Gh5 NP|2|0|4|0|6\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh5 RP|0|9|29|0|38\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh3 RP|0|4|26|0|30\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh3 AH7 RP|4|3|1|0|8\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø4.5 Gh4 AH7 NP|12|4|12|20|48\nLocator düz&açılı|BL Düz Locator Abutment Gh2 RP|7|0|13|0|20\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh3 RP|28|13|31|39|111\nİyileşim Başlığı|WN-TL İyileşim Başlığı|0|0|23|0|23\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh3 NP|0|0|0|0|0\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH4 NP|2|0|8|0|10\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh2 RP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø5 Gh5 AH7 RP|55|10|27|0|92\nGeçici Abutment|BL Geçici Kilit Abutmenti Gh1 NP|0|0|3|0|3\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh1 AH7 NP|0|1|14|5|20\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh1 RP|10|0|0|0|10\n-|PBL4810 BL Ø4.8*10mm implant RP|0|0|0|0|0\nLocator düz&açılı|Loc-Bill Takma Aparatı|0|0|1|0|1\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø5 Gh2 AH7 RP|9|0|0|10|19\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh3 AH7 RP|23|11|2|0|36\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh4 NP|0|0|0|0|0\nGeçici Abutment|BL Geçici Kilitsiz Abutment Gh4 RP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø5 Gh3 AH7 RP|15|6|1|9|31\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh3 NP|13|20|17|47|97\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh3 RP|21|7|8|15|51\nMulti Ti Base|WN-TL Multi Unit Ti-Base lock Abutment Ah3.5 NP&RP|0|0|7|0|7\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH2 RP|3|0|8|0|11\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh2 RP|0|0|9|0|9\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh3 AH7 RP|5|14|6|10|35\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh2 AH7 NP|21|3|13|0|37\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh1 NP|0|18|22|21|61\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh1 NP|0|6|8|2|16\nGeçici Abutment|BL Geçici NoLock Abutment Gh4 NP|0|0|0|0|0\nGeçici Abutment|BL Geçici NoLock Abutmenti Gh1 NP|0|5|0|0|5\nÖlçü & Laboratuvar|Kapalı Ölçü Postu RP|39|0|31|0|70\nLocator düz&açılı|BL Düz Locator Abutment Gh5 NP|6|0|10|0|16\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh1 NP|0|5|11|12|28\nTi Base No Lock& No hex|BL Düz Multi Unit Ti-Base Nolock Abutment Ah5.5 NP&RP|0|0|29|0|29\nB6 PRO İMPLANT|BL4114 4.1*14 B6 pro implant RP|0|0|0|0|0\nLocator düz&açılı|BL Düz Locator Abutment Gh4 RP|6|0|12|0|18\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh2 NP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh3 AH7 NP|0|0|3|0|3\nİyileşim Başlığı|BL Multi-Unit İyileşme Başlığı (cap)NP&RP|10|0|11|0|21\nPre-mill Abutment|BL Pre-mill Abutment Ø12 RP|0|0|0|0|0\nMulti Ti Base|BL Multi Unit Ti-Base Nolock Abutment Ah5.5 NP&RP|0|20|26|0|46\nTi Base No Lock& No hex|BL Düz Ti-Base NoLOCK Abutment Ah3.5 Gh1 RP|44|0|0|15|59\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh2 RP|0|10|9|15|34\nB6 PRO İMPLANT|BL3714 3.7*14 B6 pro implant NP|0|0|0|0|0\nB6 PRO İMPLANT|BL3712 3.7*12 B6 pro implant np|0|0|5|5|10\nCerrahi Kitler & Ekipman|Greft|1|0|1|0|2\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH3 RP|1|0|6|0|7\nMulti Ti Base|BL Multi Unit Ti-BaseNo lock Abutment Ah3.5 NP&RP|0|0|3|0|3\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh4 NP|0|10|13|18|41\nGeçici Abutment|BL Geçici Kilitsiz Abutment Gh5 NP|0|5|0|0|5\nÖlçü & Laboratuvar|BL Dijital Analog RP|3|0|5|0|8\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh3 AH7 RP|0|3|3|0|6\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh3 RP|12|8|16|0|36\n-|BL 3.7*12 B6 pro implant np|0|0|0|0|0\nÖlçü & Laboratuvar|Multi Açık Ölçü Postu|16|0|34|0|50\nLocator düz&açılı|BL Açılı (angled) Locator Abutment B15° GH6 RP|2|0|8|0|10\n-|BL Açılı Multi Unit Abutment B30° Gh3 RP|0|0|0|0|0\nÖlçü & Laboratuvar|Locator Analog|0|0|14|0|14\n-|dsf|0|0|0|0|3\nTi Base No Lock& No hex|BL Düz Ti-Base No Lock Abutment Ah5.5 Gh2 RP|1|8|4|0|13\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh4AH7 NP|25|9|9|0|43\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh1 AH7 RP|2|0|4|0|6\nLocator düz&açılı|BL Düz Locator Abutment Gh5 RP|7|0|12|0|19\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh2 AH7 RP|25|10|4|0|39\nBİLİM İMPLANT|PBL3714 BL Ø3,7*14 mm implant NP|1|0|6|0|7\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh3 NP|0|1|0|0|1\nBİLİM İMPLANT|PBL4112 BL Ø4.1*12 mm implant RP|16|21|24|0|61\nB6 PRO İMPLANT|BL416 4.1*6 B6 pro implant RP|0|0|0|0|0\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH4 RP|2|0|8|0|10\nLocator düz&açılı|BL Düz Locator Abutment Gh3 NP|5|0|17|0|22\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh4 NP|0|10|12|18|40\nB6 PRO İMPLANT|BL3212 3.2*12 b6 pro implant np|0|0|0|5|5\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh5 NP|0|0|13|16|29\nB6 PRO İMPLANT|BL3210 3.2*10 B6 pro implant NP|0|0|1|5|6\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh1 NP|0|20|8|20|48\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh2 AH7 NP|0|0|17|0|17\n-|BL Açılı Abutment A15° Gh4 AH7 NP|0|0|0|0|0\nLocator düz&açılı|BL Düz Locator Abutment Gh6 RP|5|0|12|0|17\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh2 NP|0|0|0|0|0\nGeçici Abutment|BL Geçici Lock Abutmenti Gh3 NP|0|3|0|0|3\nPre-mill Abutment|BL Pre-mill Abutment Ø12 NP|0|0|0|0|0\nÖlçü & Laboratuvar|BL Dijital Analog NP|10|0|7|0|17\nBİLİM İMPLANT|PBL4810 BL Ø4.8*10 mm implant RP|9|10|19|50|88\nDüz&Açılı Multi Unit|BL Düz Multi-Unit Abutment Q4.5 GH2 NP|1|7|4|0|12\nB6 PRO İMPLANT|BL4810 4.8*10 B6 pro implant RP|0|0|1|8|9\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH5 RP|2|0|6|0|8\nDüz&Açılı Multi Unit|BL Düz Multi Unit Q4.5GH 4 RP|0|24|20|14|58\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh5 NP|0|10|9|20|39\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø3.5 Gh1 NP|8|0|5|10|23\n-|BL Açılı Abutment B25° Gh4 AH7 RP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh1 AH7 NP|25|9|8|0|42\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh2 RP|14|16|19|44|93\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh1 NP|0|9|19|4|32\nDüz&Açılı Multi Unit|BL Düz Multi Unit Q4.5 GH2 RP|5|16|11|17|49\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø6 Gh1 AH7 RP|13|4|11|20|48\nÖlçü & Laboratuvar|BL MULTI UNIT SCANBODY NP-RP|12|0|12|0|24\nB6 PRO İMPLANT|BL4812 4.8*12 B6 pro implant RP|0|0|2|0|2\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh2 NP|11|19|10|35|75\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh4 RP|15|13|28|43|99\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh2 AH7 RP|0|0|3|0|3\nBİLİM İMPLANT|PBL3710 BL Ø3,7*10 mm implant NP|10|5|34|0|49\nTopuz Başlı Ataşman|BL Düz Topuz Başlı Ataşman Dayanak Gh5 RP|0|0|0|0|0\nTi Base Lock&Hex|BL Açılı Ti-Base Lock Abutment Ah5.5 Gh1 NP|12|0|0|20|32\nMulti Ti Base|BL Multi Unit Ti-Base lock Abutment Ah5.5 NP&RP|0|19|30|0|49\nB6 PRO İMPLANT|BL3710 3.7*10 B6 pro implant NP|0|0|0|10|10\n-|PBL486 BL Ø4.8*6 mm implant RP|0|0|0|0|0\nMulti Ti Base|RN-TL Multi Unit Ti-Base Nolock Abutment Ah3.5 NP&RP|0|0|8|0|8\nCerrahi Kitler & Ekipman|Kemik Kazıyıcı (Bone Scraper)|0|0|3|0|3\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh5 NP|0|9|12|18|39\nGeçici Abutment|BL Geçici Lock Abutmenti Gh2 NP|0|0|0|0|0\nDüz&Açılı Multi Unit|BL Düz-Multi Unit Abutment Q 4.5 GH 3 NP|13|8|10|50|81\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH6 RP|2|0|3|0|5\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh1 RP|0|8|32|29|69\nBİLİM İMPLANT|PBL2912 BL Ø2.9*12mm implant SP|0|0|5|0|5\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh5 RP|0|10|30|0|40\n-|OPIOSS GREFT|0|0|6|0|6\nLocator düz&açılı|BL Açılı Locator Abutment A15° Gh6 NP|0|0|7|0|7\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh1 NP|0|0|0|0|0\nGeçici Abutment|BL Geçici Lock Abutmenti Gh5 NP|0|4|0|0|4\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh1 RP|0|13|10|0|23\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh2 AH7 NP|24|10|3|0|37\nİyileşim Başlığı|BL İyileşme Başlığı  SP|0|0|24|0|24\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh3 AH7 NP|33|10|4|0|47\nÖlçü & Laboratuvar|BL Multi-unit Kapalı Ölçü Postu NP&RP|12|0|14|0|26\n-|BL Açılı Multi Unit Abutment B30° Gh1 NP|0|0|0|0|0\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh1 NP|11|0|0|0|11\nTopuz Başlı Ataşman|BL Düz Topuz Başlı Ataşman Gh5 NP|0|0|0|0|0\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh2 NP|0|8|7|19|34\nÖlçü & Laboratuvar|BL Simante SCANBODY RP|6|0|17|0|23\nBİLİM İMPLANT|PBL3212 BL Ø3.2*12mm implant NP|14|3|13|0|30\nDüz& Açılı Abutmentlar & Dayanaklar|Premill-Abutment RP|0|0|2|0|2\nGeçici Abutment|BL Geçici NoLock Abutmenti Gh1 RP|0|5|0|0|5\n-|BL Açılı Multi Unit Abutment A15° Gh4 NP|0|0|0|0|0\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh3 RP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh4 AH7 NP|0|0|7|0|7\nTopuz Başlı Ataşman|BL Düz Topuz Başlı Ataşman Dayanak Gh6 RP|0|0|0|0|0\nB6 PRO İMPLANT|BL486 4.8*6 B6 pro implant RP|0|0|0|0|0\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh4 NP|15|15|20|56|106\nBİLİM İMPLANT|PBL4106 BL Ø4.1*6 mm implant RP|0|2|1|0|3\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh1 RP|38|4|9|0|51\nGeçici Abutment|BL Geçici Lock Abutmenti Gh4 NP|0|0|0|0|0\nÖlçü & Laboratuvar|BL Multi-unit Düz Analog NP&RP|6|0|7|0|13\nTopuz Başlı Ataşman|BL düz topuz başlı ataşman gh 2 NP|0|0|0|0|0\nB6 PRO İMPLANT|BL488 4.8.8 B6 pro implant rp|0|0|6|4|10\nTi Base No Lock& No hex|BL Açılı Ti-Base Nolock Abutment Ah5.5 Gh1 NP|0|10|12|0|22\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh2 RP|5|5|7|0|17\nLocator düz&açılı|Loc-Bill SET|4|0|9|0|13\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh4 AH7 NP|21|10|17|0|48\nCerrahi Kitler & Ekipman|Membran 15*20|0|0|2|0|2\nLocator düz&açılı|BL Düz Locator Abutment Gh6 NP|7|0|11|0|18\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh5 RP|15|10|10|0|35\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø4.5 Gh5 AH7 NP|17|0|16|0|33\nBİLİM İMPLANT|PBL486 BL Ø4.8*6 mm implant RP|1|5|3|20|29\nBİLİM İMPLANT|PBL4812 BL Ø4.8*12mm implant RP|11|2|51|10|74\nB6 PRO İMPLANT|BL378 3.7*8 B6 pro implant NP|0|0|3|11|14\nTi Base No Lock& No hex|BL Açılı Ti-Base Nolock Abutment Ah5.5 Gh1 RP|0|9|0|0|9\nDüz&Açılı Multi Unit|BL Düz Multi Unit Q4.5 GH1 RP|13|15|21|16|65\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh4 AH7 RP|36|0|0|0|36\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh4 RP|7|10|21|0|38\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh4  NP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø4.5 Gh3 AH7 NP|7|6|6|10|29\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh1 AH7 RP|0|8|4|0|12\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh1 RP|0|10|0|0|10\nGeçici Abutment|BL Geçici NoLock Abutmenti Gh3 NP|0|5|0|0|5\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh1 AH7 RP|9|4|8|10|31\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh3 RP|0|0|0|0|0\nTi Base Lock&Hex|BL Açılı Ti-Base Lock Abutment Ah3.5 Gh5 RP|6|0|21|0|27\nMulti Ti Base|RN-TL Multi Unit Ti-Base lock Abutment Ah5.5 NP&RP|0|0|2|0|2\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh1 NP|11|17|1|12|41\nGREFT&MEMBRAN|ETHOSS|0|0|0|0|0\nGeçici Abutment|BL Geçici Lock Abutmenti Gh2 RP|0|0|0|0|0\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah3.5 Gh3 NP|0|7|32|8|47\nDüz&Açılı Multi Unit|BL Düz Multi-Unit Abutment Q4.5 GH5 NP|13|20|16|55|104\nÖlçü & Laboratuvar|BL Analog RP|37|0|17|0|54\nMulti Ti Base|WN-TL Multi Unit Ti-Base Nolock Abutment Ah3.5 NP&RP|0|0|7|0|7\nTi Base No Lock& No hex|BL AçıLI Ti-Base Nolock Abutment Ah3.5 Gh1 NP|0|9|10|32|51\nÖlçü & Laboratuvar|BL Multi-unit Tarama Parçası NP&RP|6|0|8|0|14\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh4 NP|13|19|28|40|100\nÖlçü & Laboratuvar|BL Açık Ölçü Postu RP|0|0|22|0|22\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh3 NP|0|18|11|21|50\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh4 NP|0|0|0|0|0\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh2 RP|12|11|26|44|93\nTi Base No Lock& No hex|BL Düz Ti-Base No Lock Abutment Ah3.5 Gh4 NP|0|12|19|8|39\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh4 AH7 RP|28|9|14|0|51\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh2 AH7 RP|5|0|10|10|25\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH2 NP|2|0|7|0|9\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø6 Gh4 AH7 RP|17|6|28|0|51\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh4 AH7 RP|5|0|23|0|28\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh1 RP|0|15|0|0|15\nBİLİM İMPLANT|PBL3712 BL Ø3,7*12 mm implant NP|18|12|1|0|31\nGeçici Abutment|BL Geçici Lock Abutmenti Gh4 RP|0|0|0|0|0\nBİLİM İMPLANT|PBL 3208 BL 3.2*8 Implant NP|5|5|4|10|24\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh4 NP|0|10|10|21|41\nÖlçü & Laboratuvar|BL Simante SCANBODY NP|8|0|19|0|27\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh1 RP|11|11|11|0|33\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A25° Gh4 AH7 RP|0|9|2|0|11\nLocator düz&açılı|BL Açılı Locator Abutment A15° GH3 NP|2|0|9|0|11\nÖlçü & Laboratuvar|BL Açık Ölçü Postu  NP|0|0|27|0|27\nTopuz Başlı Ataşman|BL Düz Topuz Başlı Ataşman Dayanak Gh6 NP|0|0|0|0|0\nDüz&Açılı Multi Unit|BL Düz Multi Unit Q4.5GH 3 RP|20|20|13|0|53\nBİLİM İMPLANT|PBL3210 BL Ø3.2*10mm implant NP|0|5|4|10|19\nTi Base Lock&Hex|BL Açılı Ti-Base Lock Abutment Ah3.5 Gh1 RP|0|0|15|0|15\nTi Base No Lock& No hex|BL Düz Multi Unit Ti-Base Nolock Abutment Ah3.5 NP&RP|0|0|14|0|14\nİyileşim Başlığı|BL İyileşme Başlığı RP|43|0|40|0|83\nTi Base No Lock& No hex|BL Açılı Ti-Base Nolock Abutment Ah3.5 Gh1 RP|0|5|0|0|5\nLocator düz&açılı|BL Düz Locator Abutment Gh3 RP|6|0|9|0|15\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh4 RP|10|9|12|0|31\nGeçici Abutment|BL Geçici Lock Abutmenti Gh3 RP|0|5|0|0|5\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B15° Gh3 NP|0|0|0|0|0\nTi Base No Lock& No hex|BL Düz Ti-Base No Lock Abutment Ah3.5 Gh5 NP|0|2|31|7|40\nBİLİM İMPLANT|PBL4808 BL Ø4.8*8 mm implant RP|4|1|13|50|68\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh1 AH7 RP|0|1|2|0|3\nB6 PRO İMPLANT|BL4112 4.1*12 B6 pro implant RP|0|0|5|4|9\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A30° Gh2 NP|14|14|10|61|99\nGREFT&MEMBRAN|OPHIOSS MEMBRAN|0|0|1|0|1\nB6 PRO İMPLANT|BL328 3.2*8 B6 pro implant NP|0|0|0|2|2\n-|BL 3.2*12 b6 pro implant np|0|0|0|0|0\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh3 NP|0|9|6|22|37\nB6 PRO İMPLANT|BL4110 4.1*10 B6 pro implant RP|0|0|0|16|16\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah5.5 Gh2 NP|0|7|10|21|38\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh2 RP|0|0|3|0|3\nİyileşim Başlığı|BL İyileşme Başlığı NP|20|0|23|0|43\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh5 RP|0|10|0|0|10\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh1 AH7 NP|0|0|9|0|9\nLocator düz&açılı|BL Düz Locator Abutment Gh4 NP|5|0|9|0|14\nDüz& Açılı Abutmentlar & Dayanaklar|BL Düz Abutment Ø4.5 Gh2 AH7 NP|13|1|11|20|45\nMulti Ti Base|RN-TL Multi Unit Ti-Base lock Abutment Ah3.5 NP&RP|0|0|7|0|7\nMulti Ti Base|BL Multi Unit Ti-Base lock coping (geçici) NP&RP|0|0|34|0|34\nGeçici Abutment|BL Multi Unit NoLock Geçici Abutment NP&RP|0|0|0|0|0\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B25° Gh2 AH7 NP|0|0|5|0|5\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment A15° Gh3 AH7 NP|3|7|8|0|18\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh4 RP|0|9|25|0|34\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment B30° Gh4 RP|0|0|0|0|0\nÖlçü & Laboratuvar|Locator Ölçü Postu|0|0|12|0|12\nÖlçü & Laboratuvar|BL Multi Unit Kilitli Geçici Abutment NP&RP|20|0|3|0|23\nÖlçü & Laboratuvar|BL Analog NP|20|0|23|0|43\nTi Base Lock&Hex|BL Açılı Ti-Base Lock Abutment Gh2 SP|0|0|0|0|0\nGeçici Abutment|BL Geçici Kilitsiz Abutment Gh3 RP|0|4|0|0|4\nTi Base No Lock& No hex|BL Düz Ti-Base NoLock Abutment Ah5.5 Gh2 NP|0|9|15|6|30\nDüz& Açılı Abutmentlar & Dayanaklar|BL Açılı Abutment B15° Gh3 AH7 NP|0|0|21|0|21\nÖlçü & Laboratuvar|Kapalı Ölçü Postu NP|24|0|18|0|42\nDüz&Açılı Multi Unit|BL düz Multi-Unit Abutment Q4.5 GH4 NP|14|22|11|42|89\nBİLİM İMPLANT|PBL3708 BL Ø3,7*8 mm implant NP|5|6|14|50|75\nDüz&Açılı Multi Unit|BL Düz Multi Unit Q4.5 GH5 RP|14|19|32|20|85\nTi Base Lock&Hex|BL Düz Ti-Base Lock Abutment Ah3.5 Gh3 RP|3|9|17|0|29\nLocator düz&açılı|BL Düz Locator Abutment GH2 NP|6|0|12|0|18\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh3 RP|0|19|36|23|78\nGeçici Abutment|BL Geçici NoLock Abutment Gh5 RP|0|5|5|0|10\nBİLİM İMPLANT|PBL2914 BL Ø2.9*14mm implant SP|0|0|4|0|4\nDüz&Açılı Multi Unit|BL Açılı Multi Unit Abutment A15° Gh4 RP|13|20|35|23|91`;
+
+        let DB = { stockItems: [], logs: [] };
+        let cart = [];
+        let dragItemIndex = null;
+        let addStockItemIndex = null; 
+
+        // ====== CLOUD ENTEGRASYONU (DÜZELTİLDİ) ======
+        // Senden gelen Firebase anahtarları
+        const firebaseConfig = {
+            apiKey: "AIzaSyA_u-tH_Rh_9VjnvVwVQluDNmEWMd1qwRA",
+            authDomain: "seviyestokyeni.firebaseapp.com",
+            projectId: "seviyestokyeni",
+            storageBucket: "seviyestokyeni.firebasestorage.app",
+            messagingSenderId: "155511784491",
+            appId: "1:155511784491:web:95b8634a3c748e3560566e"
+        };
+
+        let firestore = null;
+        let useCloud = false;
+
+        function initFirebase() {
+            try {
+                firebase.initializeApp(firebaseConfig);
+                firestore = firebase.firestore();
+                useCloud = true;
+                document.getElementById('wifi-icon').classList.replace('text-gray-500', 'text-green-500');
+                document.getElementById('status-text').innerText = "Buluta Bağlı (Canlı)";
+                document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Bulut Aktif';
+                document.getElementById('db-loader').classList.remove('hidden');
+
+                firestore.collection('seviye_stok').doc('main_data').onSnapshot((doc) => {
+                    if(doc.exists) {
+                        DB = doc.data();
+                    } else {
+                        parseRawData();
+                        saveDB(); // Veri yoksa şablonu bas
+                    }
+                    refreshAllViews();
+                    document.getElementById('db-loader').classList.add('hidden');
+                });
+            } catch (e) {
+                console.error("Firebase başlatılamadı: ", e);
+                initLocal();
+            }
+        }
+
+        function initLocal() {
+            useCloud = false;
+            document.getElementById('wifi-icon').classList.replace('text-green-500', 'text-gray-500');
+            document.getElementById('status-text').innerText = "Yerel Bağlantı (Sadece Sen)";
+            document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-hard-drive mr-1"></i> Yerel Kayıt';
+            document.getElementById('db-loader').classList.add('hidden');
+
+            const savedData = localStorage.getItem('seviye_v8_data');
+            if(savedData) { DB = JSON.parse(savedData); } 
+            else { parseRawData(); saveDB(); }
+            refreshAllViews();
+        }
+
+        window.onload = function() {
+            initFirebase();
+        };
+
+        function saveDB() {
+            if (useCloud) {
+                document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-rotate mr-1 animate-spin"></i> Buluta Yazılıyor...';
+                firestore.collection('seviye_stok').doc('main_data').set(DB)
+                    .then(() => {
+                        document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-check mr-1"></i> Senkronize Edildi';
+                    })
+                    .catch(err => alert("Buluta kaydedilemedi: " + err));
+            } else {
+                localStorage.setItem('seviye_v8_data', JSON.stringify(DB));
+            }
+        }
+
+        // ===================================
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobile-overlay');
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full'); overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full'); overlay.classList.add('hidden');
+            }
+        }
+
+        function parseRawData() {
+            RAW_STOCK_DATA.trim().split('\n').forEach(line => {
+                const p = line.split('|');
+                if(p.length >= 7) {
+                    let catName = p[0] === "-" ? "DİĞER ÜRÜNLER" : p[0];
+                    DB.stockItems.push({ id: 'item_' + Math.random().toString(36).substr(2, 9), categoryId: catName, name: p[1], counts: { Adsm: parseInt(p[2])||0, Maku: parseInt(p[3])||0, Sdu: parseInt(p[4])||0, Depo: parseInt(p[5])||0 }, count: parseInt(p[6])||0 });
+                }
+            });
+        }
+
+        function refreshAllViews() {
+            renderDashboard(); renderStockTable(); renderDragList(); renderLogs(); renderKlinikRapor();
+            if(document.getElementById('stokSearch').value) filterTable('stokSearch', 'stok-main-body');
+            if(document.getElementById('dragSearch').value) filterTable('dragSearch', 'drag-list-body');
+        }
+
+        function handleBackupUpload(event) {
+            const file = event.target.files[0];
+            if(!file) return;
+            const statusMsg = document.getElementById('upload-status-msg');
+            statusMsg.innerText = "Dosya okunuyor, lütfen bekleyin...";
+            statusMsg.classList.remove('hidden');
+            statusMsg.classList.replace('text-green-600', 'text-blue-600');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if(parsed.data && parsed.data.logs) {
+                        const oldLogs = parsed.data.logs;
+                        DB.logs = [...DB.logs, ...oldLogs];
+                        saveDB(); refreshAllViews();
+                        statusMsg.innerText = `Başarılı! ${oldLogs.length} adet işlem başarıyla eklendi.`;
+                        statusMsg.classList.replace('text-blue-600', 'text-green-600');
+                        setTimeout(() => switchPage('gecmis'), 1500);
+                    } else {
+                        statusMsg.innerText = "Hata: Dosyada 'logs' verisi bulunamadı.";
+                        statusMsg.classList.replace('text-blue-600', 'text-red-600');
+                    }
+                } catch(err) {
+                    statusMsg.innerText = "Hata: Dosya geçerli bir JSON formatında değil.";
+                    statusMsg.classList.replace('text-blue-600', 'text-red-600');
+                }
+                event.target.value = ""; 
+            };
+            reader.readAsText(file);
+        }
+
+        function openStockAddModal(index) {
+            addStockItemIndex = index;
+            document.getElementById('add-modal-itemName').innerText = DB.stockItems[index].name;
+            document.getElementById('add-modal-qty').value = 1;
+            document.getElementById('stockAddModal').classList.remove('hidden');
+        }
+
+        function closeStockAddModal() { document.getElementById('stockAddModal').classList.add('hidden'); addStockItemIndex = null; }
+
+        function confirmStockAdd() {
+            if(addStockItemIndex === null) return;
+            const item = DB.stockItems[addStockItemIndex];
+            const qty = parseInt(document.getElementById('add-modal-qty').value);
+            const depo = document.getElementById('add-modal-depo').value;
+
+            if(qty <= 0 || isNaN(qty)) { alert("Geçerli bir adet giriniz!"); return; }
+
+            item.counts[depo] += qty; item.count += qty;
+            DB.logs.push({ timestamp: Date.now(), user: "Saha Ekibi", action: "Stok Girişi", productName: item.name, recipient: "Sistem / Tedarikçi", description: `Depo: ${depo} | Adet: +${qty} | Not: Yeni ürün girişi yapıldı`, transactionId: "ADD-" + Math.floor(Math.random()*100000) });
+            saveDB(); refreshAllViews(); closeStockAddModal(); alert("Stok başarıyla depoya eklendi!");
+        }
+
+        async function handleOCR(event) {
+            const file = event.target.files[0]; if(!file) return;
+            const loader = document.getElementById('ai-loader'); const progress = document.getElementById('ai-progress-bar'); const status = document.getElementById('ai-status');
+            loader.classList.remove('hidden'); progress.style.width = '10%'; status.innerText = "Yapay Zeka Motoru Hazırlanıyor... Lütfen Bekleyin.";
+
+            try {
+                const ret = await Tesseract.recognize(file, 'tur', {
+                    logger: m => {
+                        if(m.status === 'recognizing text') { let pct = Math.floor(m.progress * 100); progress.style.width = pct + '%'; status.innerText = `Reçete Okunuyor... %${pct}`; } 
+                        else if (m.status === 'loading tesseract core' || m.status === 'loading language traineddata') { status.innerText = "Dil Dosyaları İndiriliyor... (İlk kullanımda biraz sürebilir)"; } 
+                        else { status.innerText = `Sistem Hazırlanıyor: ${m.status}`; }
+                    }
+                });
+
+                const rawReadText = ret.data.text; 
+                let ocrText = rawReadText.toLowerCase().replace(/digital/g, 'dijital').replace(/u-base/g, 'ti-base').replace(/loch/g, 'lock').replace(/noloch/g, 'nolock').replace(/[,;\n\r]/g, ' '); 
+                let foundCount = 0; let doctorName = ""; let patientName = "";
+                
+                const lines = rawReadText.split('\n');
+                lines.forEach(line => {
+                    const lLower = line.toLowerCase();
+                    if(lLower.includes('dt.') || lLower.includes('dr.') || lLower.includes('sayın')) { doctorName = line.replace(/dt\.|dr\.|sayın|:|/gi, '').trim().toUpperCase(); }
+                    if(lLower.includes('hasta') || lLower.includes('adres')) { patientName = line.replace(/hasta|adres|:|/gi, '').trim().toUpperCase(); }
+                });
+
+                if(doctorName) document.getElementById('batch-recipient').value = doctorName;
+                if(patientName) document.getElementById('batch-note').value = "Hasta: " + patientName;
+
+                DB.stockItems.forEach((item, index) => {
+                    let itemName = item.name.toLowerCase();
+                    let tokens = itemName.split(/[\s\-*Ø,]+/);
+                    let matchScore = 0; let requiredScore = tokens.length * 0.5; let hasCriticalMatch = false;
+
+                    tokens.forEach(token => {
+                        if(token.length === 0) return; let cleanToken = token;
+                        if(token.startsWith('ah')) cleanToken = token.replace('ah', ''); if(token.startsWith('gh')) cleanToken = token.replace('gh', '');
+                        if(ocrText.includes(token) || (cleanToken !== token && ocrText.includes(cleanToken))) { matchScore++; if(/\d/.test(cleanToken) || token === 'np' || token === 'rp' || token === 'sp') { matchScore += 0.5; hasCriticalMatch = true; } }
+                    });
+
+                    if(matchScore >= requiredScore && hasCriticalMatch) { addToCart(index); foundCount++; }
+                });
+
+                if(foundCount > 0) { alert(`Harika! Kağıttan ${foundCount} çeşit ürün eşleştirildi ve sepete eklendi.\n` + (doctorName ? `Doktor: ${doctorName} olarak algılandı.\n` : '') + `Lütfen listedeki adetleri güncelleyin.`); } 
+                else { document.getElementById('ai-raw-text').innerText = rawReadText; document.getElementById('aiErrorModal').classList.remove('hidden'); }
+            } catch(error) { console.error("Yapay Zeka Hatası:", error); alert("Kağıt okunurken bağlantı hatası oluştu. Lütfen tekrar deneyin."); } 
+            finally { loader.classList.add('hidden'); document.getElementById('ocrInput').value = "";  }
+        }
+
+        function toggleCategory(catId) {
+            const rows = document.querySelectorAll(`.category-row-${catId}`); const icon = document.getElementById(`icon-${catId}`); let isCurrentlyHidden = false;
+            rows.forEach(row => { if(row.classList.contains('hidden')) { row.classList.remove('hidden'); isCurrentlyHidden = true; } else { row.classList.add('hidden'); } });
+            if(isCurrentlyHidden) icon.classList.replace('fa-chevron-right', 'fa-chevron-down'); else icon.classList.replace('fa-chevron-down', 'fa-chevron-right');
+        }
+
+        function renderDashboard() {
+            document.getElementById('stat-total-types').innerText = DB.stockItems.length; document.getElementById('stat-total-logs').innerText = DB.logs.length;
+            let totalQty = 0; let dt = { "Adsm":0, "Maku":0, "Sdu":0, "Depo":0 };
+            DB.stockItems.forEach(i => { totalQty += (i.count || 0); if(i.counts) { dt.Adsm+=i.counts.Adsm; dt.Maku+=i.counts.Maku; dt.Sdu+=i.counts.Sdu; dt.Depo+=i.counts.Depo; } });
+            document.getElementById('stat-total-items').innerText = totalQty;
+            const bc = document.getElementById('depot-bars-container'); bc.innerHTML = '';
+            Object.keys(dt).forEach(depot => { const perc = totalQty > 0 ? ((dt[depot] / totalQty) * 100).toFixed(1) : 0; bc.innerHTML += `<div class="bg-gray-50 p-3 md:p-4 rounded-lg border border-gray-100"><div class="flex justify-between text-xs md:text-sm font-semibold text-gray-600 mb-1"><span>${depot}</span><span>${dt[depot]} Adet</span></div><div class="w-full bg-gray-200 h-2 md:h-2.5 rounded-full overflow-hidden"><div class="bg-blue-500 h-2 md:h-2.5 rounded-full" style="width: ${perc}%"></div></div></div>`; });
+        }
+
+        function renderStockTable() {
+            const body = document.getElementById('stok-main-body'); body.innerHTML = ''; const grouped = {};
+            DB.stockItems.forEach((item, index) => { const cat = item.categoryId || 'DİĞER ÜRÜNLER'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push({item, index}); });
+            Object.keys(grouped).forEach((cat, catIndex) => {
+                const catId = 'cat-' + catIndex; let totalStock = 0; grouped[cat].forEach(i => totalStock += (i.item.count || 0));
+                body.innerHTML += `<tr class="bg-white border-b border-gray-200 cursor-pointer hover:bg-blue-50 transition-colors category-header" onclick="toggleCategory('${catId}')"><td colspan="7" class="p-3 md:p-4 pl-4 md:pl-6 text-blue-800 flex items-center justify-between"><div class="flex items-center space-x-2 md:space-x-3 font-bold"><i id="icon-${catId}" class="fa-solid fa-chevron-right w-4"></i><span class="uppercase tracking-wider text-[10px] md:text-sm">${cat}</span></div><div class="text-[10px] md:text-xs bg-blue-100 px-2 py-1 rounded-full font-semibold">${grouped[cat].length} Çeşit | Toplam ${totalStock} Stok</div></td></tr>`;
+                grouped[cat].forEach(data => {
+                    const item = data.item; const tc = item.count || 0;
+                    body.innerHTML += `<tr class="hover:bg-gray-100 transition-colors search-row hidden category-row-${catId}" data-search="${(item.name+' '+item.categoryId).toLowerCase()}"><td class="p-2 md:p-3 pl-8 md:pl-12 font-medium text-gray-800 text-[10px] md:text-sm border-r border-gray-100"><i class="fa-solid fa-angle-right text-gray-300 mr-1 md:mr-2"></i>${item.name}</td><td class="p-2 md:p-3 text-center text-gray-700">${item.counts.Adsm}</td><td class="p-2 md:p-3 text-center text-gray-700">${item.counts.Maku}</td><td class="p-2 md:p-3 text-center text-gray-700">${item.counts.Sdu}</td><td class="p-2 md:p-3 text-center border-r border-gray-100 text-gray-700">${item.counts.Depo}</td><td class="p-2 md:p-3 text-center font-bold ${tc<5?'text-red-600 bg-red-50':'text-blue-600 bg-blue-50'} text-xs md:text-base border-r border-gray-100">${tc}</td><td class="p-1 md:p-2 text-center"><button onclick="openStockAddModal(${data.index})" class="bg-green-100 text-green-700 hover:bg-green-200 px-2 py-1 md:px-3 md:py-1.5 rounded font-bold transition-colors shadow-sm text-[10px] md:text-xs"><i class="fa-solid fa-plus md:mr-1"></i><span class="hidden md:inline"> Ekle</span></button></td></tr>`;
+                });
+            });
+        }
+
+        function renderDragList() {
+            const body = document.getElementById('drag-list-body'); body.innerHTML = ''; const grouped = {};
+            DB.stockItems.forEach((item, index) => { if(item.count > 0) { const cat = item.categoryId || 'DİĞER ÜRÜNLER'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push({item, index}); } });
+            Object.keys(grouped).forEach((cat, catIndex) => {
+                const catId = 'drag-cat-' + catIndex;
+                body.innerHTML += `<tr class="bg-emerald-50 cursor-pointer border-b border-white category-header" onclick="toggleCategory('${catId}')"><td colspan="2" class="p-2 md:p-3 pl-3 md:pl-4 font-bold text-emerald-800 text-[10px] md:text-xs flex justify-between items-center"><span><i id="icon-${catId}" class="fa-solid fa-chevron-right mr-1 md:mr-2"></i> ${cat}</span><span class="bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded-full text-[9px] md:text-[10px] shadow-sm">${grouped[cat].length} Ürün</span></td></tr>`;
+                grouped[cat].forEach(data => {
+                    const item = data.item;
+                    body.innerHTML += `<tr class="draggable-item bg-white hover:bg-emerald-100 search-row hidden category-row-${catId} border-b border-gray-100" data-search="${(item.name+' '+item.categoryId).toLowerCase()}" draggable="true" ondragstart="dragStart(event, ${data.index})" ondragend="dragEnd(event)"><td class="p-2 md:p-3 pl-6 md:pl-8"><p class="font-medium text-gray-800 text-[10px] md:text-xs">${item.name}</p><p class="text-[9px] md:text-[10px] text-gray-500 mt-0.5 md:mt-1">Stok: <b class="text-blue-600">${item.count}</b> (A:${item.counts.Adsm}, M:${item.counts.Maku}, S:${item.counts.Sdu}, D:${item.counts.Depo})</p></td><td class="p-2 md:p-3 text-right"><button onclick="addToCart(${data.index})" class="md:hidden bg-blue-100 text-blue-600 px-2 py-1 rounded text-[10px] font-bold"><i class="fa-solid fa-plus"></i></button><i class="hidden md:inline fa-solid fa-hand-holding-hand text-gray-300 hover:text-emerald-500 text-lg"></i></td></tr>`;
+                });
+            });
+        }
+
+        function filterTable(inputId, bodyId) {
+            const val = document.getElementById(inputId).value.toLowerCase(); const isSearching = val.trim().length > 0;
+            const rows = document.getElementById(bodyId).getElementsByClassName('search-row'); const headers = document.getElementById(bodyId).getElementsByClassName('category-header');
+            Array.from(headers).forEach(header => { const icon = header.querySelector('i'); if(isSearching) icon.classList.replace('fa-chevron-right', 'fa-chevron-down'); else icon.classList.replace('fa-chevron-down', 'fa-chevron-right'); });
+            for(let row of rows) { if(row.getAttribute('data-search').includes(val)) { row.style.display = ''; if(isSearching) row.classList.remove('hidden'); } else { row.style.display = 'none'; } if(!isSearching) row.classList.add('hidden'); }
+        }
+
+        function dragStart(event, index) { dragItemIndex = index; event.dataTransfer.effectAllowed = 'copy'; event.target.classList.add('opacity-40'); }
+        function dragEnd(event) { event.target.classList.remove('opacity-40'); dragItemIndex = null; }
+        function allowDrop(event) { event.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+        function dragLeave(event) { document.getElementById('drop-zone').classList.remove('drag-over'); }
+        function drop(event) { event.preventDefault(); dragLeave(event); if(dragItemIndex !== null) { addToCart(dragItemIndex); } }
+
+        function addToCart(itemIndex) {
+            const item = DB.stockItems[itemIndex]; const isImplant = (item.categoryId.toUpperCase().includes('BİLİM İMPLANT') || item.categoryId.toUpperCase().includes('B6 PRO'));
+            const existingCartIndex = cart.findIndex(c => c.index === itemIndex);
+            if(existingCartIndex > -1) { cart[existingCartIndex].qty += 1; renderCart(); return; }
+            cart.push({ index: itemIndex, itemRef: item, qty: 1, depot: 'Adsm', lot: '', isImplant: isImplant }); renderCart();
+        }
+
+        function removeFromCart(cartIndex) { cart.splice(cartIndex, 1); renderCart(); }
+        function updateCartValue(cartIndex, field, value) { cart[cartIndex][field] = value; }
+
+        function renderCart() {
+            const container = document.getElementById('cart-items-container'); const msg = document.getElementById('empty-cart-msg'); const badge = document.getElementById('cart-count-badge');
+            let totalQty = cart.reduce((sum, c) => sum + c.qty, 0); badge.innerText = cart.length + " Çeşit (" + totalQty + " Adet)";
+            if(cart.length === 0) { container.innerHTML = ''; msg.classList.remove('hidden'); return; }
+            msg.classList.add('hidden'); container.innerHTML = ''; 
+            cart.forEach((cItem, i) => {
+                const stockStr = `A:${cItem.itemRef.counts.Adsm} | M:${cItem.itemRef.counts.Maku} | S:${cItem.itemRef.counts.Sdu} | D:${cItem.itemRef.counts.Depo}`;
+                const lotHtml = cItem.isImplant ? `<div class="mt-1 md:mt-2"><input type="text" placeholder="Lot Numarası (Zorunlu)" value="${cItem.lot}" onchange="updateCartValue(${i}, 'lot', this.value)" class="w-full border border-amber-300 bg-amber-50 rounded px-2 py-1 text-[10px] md:text-xs outline-none focus:ring-1 focus:ring-amber-500"></div>` : '';
+                container.innerHTML += `<div class="bg-white p-2 md:p-3 rounded-lg border border-gray-200 shadow-sm relative transition-all"><button onclick="removeFromCart(${i})" class="absolute top-1 right-2 text-red-400 hover:text-red-600"><i class="fa-solid fa-trash-can"></i></button><p class="text-[10px] md:text-xs font-bold text-gray-800 pr-6 leading-tight">${cItem.itemRef.name}</p><p class="text-[8px] md:text-[10px] text-gray-500 mb-1 md:mb-2 font-mono bg-gray-100 inline-block px-1 rounded">${stockStr}</p><div class="flex space-x-1 md:space-x-2 mt-1"><select onchange="updateCartValue(${i}, 'depot', this.value)" class="flex-1 border border-gray-300 rounded px-1 md:px-2 py-1 text-[10px] md:text-xs outline-none focus:ring-1 focus:ring-blue-500 bg-white"><option value="Adsm" ${cItem.depot==='Adsm'?'selected':''}>Adsm'den Çık</option><option value="Maku" ${cItem.depot==='Maku'?'selected':''}>Maku'dan Çık</option><option value="Sdu" ${cItem.depot==='Sdu'?'selected':''}>Sdu'dan Çık</option><option value="Depo" ${cItem.depot==='Depo'?'selected':''}>Depodan Çık</option></select><div class="flex items-center border border-gray-300 rounded bg-white px-1"><span class="text-[8px] md:text-[10px] text-gray-400 font-bold px-1 hidden md:inline">Adet:</span><input type="number" min="1" value="${cItem.qty}" onchange="updateCartValue(${i}, 'qty', parseInt(this.value))" class="w-8 md:w-10 text-center py-0.5 md:py-1 text-[10px] md:text-xs font-bold outline-none text-blue-600"></div></div>${lotHtml}</div>`;
+            });
+        }
+
+        function confirmBatchCheckout() {
+            if(cart.length === 0) { alert("Sepetiniz boş!"); return; }
+            const recipient = document.getElementById('batch-recipient').value.trim(); const note = document.getElementById('batch-note').value.trim();
+            if(!recipient) { alert("Lütfen çıkış yapılan Doktor veya Klinik adını girin!"); return; }
+            for(let c of cart) {
+                if(c.isImplant && c.lot.trim() === "") { alert(`Hata: '${c.itemRef.name}' implantı için Lot Numarası zorunludur!`); return; }
+                if(c.itemRef.counts[c.depot] < c.qty) { if(!confirm(`Uyarı: '${c.itemRef.name}' için ${c.depot} deposunda yeterli stok yok. Eksiye düşerek devam edilsin mi?`)) return; }
+            }
+            const transId = "TRX-" + Math.floor(Math.random()*100000);
+            cart.forEach(c => {
+                const item = DB.stockItems[c.index]; item.counts[c.depot] -= c.qty; item.count -= c.qty;
+                let descStr = `Depo: ${c.depot} | Adet: ${c.qty}`; if(c.isImplant) descStr += ` | Lot: ${c.lot}`; if(note) descStr += ` | Not: ${note}`;
+                DB.logs.push({ timestamp: Date.now(), user: "Saha Ekibi", action: "Stok Çıkışı", productName: item.name, recipient: recipient, description: descStr, transactionId: transId });
+            });
+            saveDB(); refreshAllViews(); cart = []; document.getElementById('batch-recipient').value = ""; document.getElementById('batch-note').value = ""; renderCart();
+            alert("Saha çıkış işlemi başarıyla tamamlandı!");
+        }
+
+        function renderKlinikRapor() {
+            const container = document.getElementById('klinik-cards-container'); container.innerHTML = ''; const searchVal = document.getElementById('klinikSearch').value.toLowerCase();
+            const reportMap = {};
+            DB.logs.forEach(log => { if(log.action === "Stok Çıkışı" || log.action === "Hızlı Stok Çıkışı" || log.action === "Çoklu Ürün Kullanımı") { let rec = log.recipient || "Eski/Belirtilmeyen Çıkışlar"; if(!reportMap[rec]) { reportMap[rec] = { totalTx: 0, items: [] }; } reportMap[rec].totalTx++; reportMap[rec].items.push(log); } });
+            Object.keys(reportMap).forEach(doctor => {
+                if(doctor.toLowerCase().includes(searchVal)) {
+                    const data = reportMap[doctor];
+                    container.innerHTML += `<div class="bg-white p-4 md:p-5 rounded-xl border border-amber-200 shadow-sm flex flex-col max-h-[300px] md:max-h-[400px]"><div class="flex items-center space-x-3 mb-2 md:mb-3 border-b border-gray-100 pb-2 md:pb-3 shrink-0"><div class="w-8 h-8 md:w-10 md:h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center text-sm md:text-lg"><i class="fa-solid fa-user-doctor"></i></div><div><h4 class="font-bold text-gray-800 text-xs md:text-base leading-tight">${doctor}</h4><p class="text-[9px] md:text-xs text-gray-500">${data.totalTx} Ürün Hareketi</p></div></div><div class="overflow-y-auto flex-1 pr-1 md:pr-2 space-y-1.5 md:space-y-2">${data.items.map(i => `<p class="text-[9px] md:text-[11px] text-gray-700 border-l-2 border-amber-400 pl-2 bg-gray-50 p-1 md:p-1.5 rounded"><b>${new Date(i.timestamp).toLocaleDateString('tr-TR')}</b><br/><span class="text-blue-600 font-semibold">${i.productName || ''}</span><br/><span class="text-gray-500 leading-tight block">${i.description}</span></p>`).join('')}</div></div>`;
+                }
+            });
+        }
+
+        function renderLogs() {
+            const body = document.getElementById('log-main-body'); body.innerHTML = ''; const searchVal = document.getElementById('logSearch').value.toLowerCase();
+            const sortedLogs = [...DB.logs].sort((a,b) => b.timestamp - a.timestamp);
+            sortedLogs.forEach(log => {
+                const searchStr = `${log.productName||''} ${log.recipient||''} ${log.description||''} ${log.action||''}`.toLowerCase();
+                if(searchStr.includes(searchVal)) {
+                    const dateStr = new Date(log.timestamp).toLocaleDateString('tr-TR') + ' ' + new Date(log.timestamp).toLocaleTimeString('tr-TR').slice(0,5); let color = "bg-gray-100 text-gray-600";
+                    if(log.action.includes("Çıkış") || log.action.includes("Kullanımı")) color = "bg-emerald-100 text-emerald-800";
+                    if(log.action.includes("Transfer")) color = "bg-purple-100 text-purple-800";
+                    if(log.action.includes("Giriş")) color = "bg-blue-100 text-blue-800";
+                    body.innerHTML += `<tr class="hover:bg-gray-50 border-b border-gray-50"><td class="p-2 md:p-4 pl-4 md:pl-6 text-[9px] md:text-xs text-gray-500 whitespace-nowrap">${dateStr}</td><td class="p-2 md:p-4 text-[10px] md:text-xs font-bold text-blue-600">${log.recipient || '-'}</td><td class="p-2 md:p-4"><span class="px-1.5 py-0.5 md:px-2 md:py-1 rounded text-[8px] md:text-[10px] font-bold uppercase ${color}">${log.action}</span><p class="text-[10px] md:text-xs font-semibold text-gray-800 mt-1">${log.productName || ''}</p></td><td class="p-2 md:p-4 text-[10px] md:text-sm text-gray-600 min-w-[150px] leading-tight">${log.description}</td></tr>`;
+                }
+            });
+        }
+
+        function switchPage(pageId) {
+            document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden')); document.getElementById(`page-${pageId}`).classList.remove('hidden');
+            document.querySelectorAll('nav button').forEach(b => { b.classList.remove('bg-blue-600', 'text-white', 'border', 'border-gray-800'); b.classList.add('hover:bg-gray-800'); });
+            const activeBtn = document.getElementById(`nav-${pageId}`); activeBtn.classList.remove('hover:bg-gray-800');
+            if(pageId === 'cikis') { activeBtn.classList.add('border', 'border-gray-800'); } else { activeBtn.classList.add('bg-blue-600', 'text-white'); }
+            const titles = { 'dashboard': 'Panel Özeti', 'stoklar': 'Kategorili Stok Listesi', 'cikis': 'Saha Çıkış İşlemleri', 'klinik': 'Klinik Çıkış Raporları', 'gecmis': 'Tüm İşlem Kayıtları', 'veri': 'Sistem Ayarları' };
+            document.getElementById('page-title').innerText = titles[pageId];
+            if(window.innerWidth < 768) { const overlay = document.getElementById('mobile-overlay'); if(!overlay.classList.contains('hidden')) toggleMobileMenu(); }
+        }
+    </script>
+</body>
+</html>
