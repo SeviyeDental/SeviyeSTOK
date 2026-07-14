@@ -5,15 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Seviye Stok & Bulut Çıkış Sistemi</title>
     
+    <!-- Tasarım Motoru -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
     
     <!-- FIREBASE BULUT BAĞLANTILARI -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
 
     <style>
+        /* CSS Tanımlamaları */
         .drag-over { border: 2px dashed #3b82f6; background-color: #eff6ff; }
         .draggable-item { cursor: grab; }
         .draggable-item:active { cursor: grabbing; }
@@ -24,9 +25,25 @@
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .ai-scanning { background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #3b82f6 100%); background-size: 200% auto; animation: shine 2s linear infinite; }
         @keyframes shine { to { background-position: 200% center; } }
+        
+        /* HIZLI AÇILIŞ EKRANI TASARIMI (BEYAZ EKRAN SORUNU İÇİN) */
+        #splash-screen {
+            position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; transition: opacity 0.5s ease;
+        }
+        .spinner { border: 4px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 4px solid white; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-top: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-gray-50 font-sans h-screen w-screen flex overflow-hidden m-0 p-0">
+
+    <!-- AÇILIŞ (SPLASH) EKRANI - MİLİSANİYEDE ÇALIŞIR -->
+    <div id="splash-screen">
+        <i class="fa-solid fa-tooth text-5xl mb-4"></i>
+        <h1 class="text-3xl font-bold tracking-widest">SEVİYE DENTAL</h1>
+        <p class="text-blue-200 mt-2 text-sm">Stok & Saha Yönetimi Yükleniyor...</p>
+        <div class="spinner"></div>
+    </div>
 
     <div id="mobile-overlay" onclick="toggleMobileMenu()" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-40 hidden md:hidden"></div>
 
@@ -38,7 +55,7 @@
                     <i class="fa-solid fa-bolt text-blue-500 text-2xl"></i>
                     <div>
                         <h2 class="font-bold text-lg leading-tight">Seviye Stok</h2>
-                        <span class="text-[10px] text-emerald-400 font-bold tracking-widest">CLOUD v8.4 Fix</span>
+                        <span class="text-[10px] text-emerald-400 font-bold tracking-widest">CLOUD v8.5 Hızlı</span>
                     </div>
                 </div>
                 <button onclick="toggleMobileMenu()" class="md:hidden text-gray-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
@@ -58,7 +75,7 @@
             <i class="fa-solid fa-wifi text-green-500 text-base" id="wifi-icon"></i>
             <div>
                 <p class="font-semibold text-white">Ekip Modu</p>
-                <p class="text-xs text-blue-400" id="status-text">Sunucu Aranıyor...</p>
+                <p class="text-xs text-blue-400" id="status-text">Bağlanılıyor...</p>
             </div>
         </div>
     </div>
@@ -66,16 +83,18 @@
     <!-- SAĞ İÇERİK ALANI -->
     <div class="flex-1 flex flex-col h-full bg-gray-100 relative overflow-hidden">
         
+        <!-- YÜKLEME EKRANI (AÇILIŞTAN SONRAKİ KISA VERİ EŞİTLEMESİ) -->
         <div id="db-loader" class="absolute inset-0 bg-white z-[200] flex flex-col items-center justify-center transition-opacity duration-500">
             <i class="fa-solid fa-cloud-arrow-down text-6xl text-blue-500 mb-4 animate-bounce"></i>
             <h2 class="text-xl md:text-2xl font-bold text-gray-800">Buluta Bağlanılıyor...</h2>
             <p class="text-xs md:text-sm text-gray-500 mt-2 px-4 text-center">Lütfen bekleyin, veriler eşitleniyor.</p>
         </div>
 
+        <!-- YAPAY ZEKA YÜKLEME EKRANI -->
         <div id="ai-loader" class="absolute inset-0 bg-gray-900 bg-opacity-80 z-[100] hidden flex flex-col items-center justify-center text-white backdrop-blur-sm">
             <i class="fa-solid fa-microchip text-4xl md:text-6xl text-blue-400 mb-4 animate-pulse"></i>
             <h2 class="text-xl md:text-2xl font-bold mb-2">Kağıt Analiz Ediliyor...</h2>
-            <p id="ai-status" class="text-xs md:text-sm text-gray-300 font-mono mb-6 text-center px-4">Lütfen Bekleyin...</p>
+            <p id="ai-status" class="text-xs md:text-sm text-gray-300 font-mono mb-6 text-center px-4">Yapay Zeka Motoru İndiriliyor (İlk seferde sürebilir)...</p>
             <div class="w-48 md:w-64 h-2 bg-gray-700 rounded-full overflow-hidden"><div id="ai-progress-bar" class="h-full ai-scanning" style="width: 10%;"></div></div>
         </div>
 
@@ -124,7 +143,10 @@
                     <table class="w-full text-left border-collapse min-w-[600px]">
                         <thead class="sticky top-0 bg-white shadow-sm border-b border-gray-200 z-10">
                             <tr class="text-gray-600 text-[10px] md:text-xs font-bold uppercase tracking-wider">
-                                <th class="p-3 md:p-4 pl-4 md:pl-6 w-1/3">Kategori / Ürün</th><th class="p-2 md:p-4 text-center">Adsm</th><th class="p-2 md:p-4 text-center">Maku</th><th class="p-2 md:p-4 text-center">Sdu</th><th class="p-2 md:p-4 text-center border-r border-gray-200">Depo</th><th class="p-2 md:p-4 text-center text-blue-600 bg-blue-50">Top.</th><th class="p-2 md:p-4 text-center bg-gray-50">İşlem</th>
+                                <th class="p-3 md:p-4 pl-4 md:pl-6 w-1/3">Kategori / Ürün</th>
+                                <th class="p-2 md:p-4 text-center">Adsm</th><th class="p-2 md:p-4 text-center">Maku</th><th class="p-2 md:p-4 text-center">Sdu</th><th class="p-2 md:p-4 text-center border-r border-gray-200">Depo</th>
+                                <th class="p-2 md:p-4 text-center text-blue-600 bg-blue-50">Top.</th>
+                                <th class="p-2 md:p-4 text-center bg-gray-50">İşlem</th>
                             </tr>
                         </thead>
                         <tbody id="stok-main-body" class="divide-y divide-gray-100 text-xs md:text-sm text-gray-700 bg-gray-50"></tbody>
@@ -207,13 +229,13 @@
                         <i class="fa-solid fa-cloud-arrow-up"></i>
                     </div>
                     <h3 class="text-lg md:text-2xl font-bold text-gray-800 mb-2">JSON Dosyasını Buluta Aktar</h3>
-                    <p class="text-gray-500 text-xs md:text-sm mb-4 max-w-lg mx-auto text-left">
-                        Eski yedek <b>JSON</b> dosyanızı buradan seçerek <b>geçmiş işlem loglarınızı</b> saniyeler içinde buluta ekleyebilirsiniz.
+                    <p class="text-gray-500 text-xs md:text-sm mb-6 max-w-lg mx-auto text-left">
+                        Eski yedek <b>JSON</b> dosyanızı buradan seçerek <b>TÜM STOK VE LOG GEÇMİŞİNİ</b> saniyeler içinde buluta aktarabilirsiniz. <br><br>
+                        <i class="fa-solid fa-triangle-exclamation text-amber-500"></i> Bu işlem buluttaki stok verilerinizi JSON'dakilerle eşitler.
                     </p>
-                    
                     <input type="file" id="backupFileInput" accept=".json" class="hidden" onchange="handleBackupUpload(event)">
                     <button onclick="document.getElementById('backupFileInput').click()" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 md:px-8 py-2 md:py-3 rounded-lg font-bold shadow-lg transition-all active:scale-95 text-sm md:text-base mb-6">
-                        <i class="fa-solid fa-file-import mr-2"></i> Eski JSON Dosyasını Seç ve Logları Aktar
+                        <i class="fa-solid fa-file-import mr-2"></i> Eski JSON Dosyasını Seç
                     </button>
                     <p id="upload-status-msg" class="text-xs md:text-sm font-semibold mt-4 hidden"></p>
 
@@ -238,7 +260,7 @@
             </div>
             <div class="p-5 space-y-4">
                 <div><p class="text-[10px] text-gray-500 uppercase font-bold mb-1">Ürün</p><p id="add-modal-itemName" class="text-gray-900 font-semibold bg-gray-100 p-2 rounded text-xs md:text-sm"></p></div>
-                <div><label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Depo</label><select id="add-modal-depo" class="w-full border rounded px-3 py-2 text-sm"><option value="Adsm">Adsm Deposu</option><option value="Maku">Maku Deposu</option><option value="Sdu">Sdu Deposu</option><option value="Depo" selected>Merkez Depo</option></select></div>
+                <div><label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Depo</label><select id="add-modal-depo" class="w-full border rounded px-3 py-2 text-sm"><option value="Adsm">Adsm Deposu</option><option value="Maku">Maku Deposu</option><option value="Sdu">Sdu Deposu</option><option value="Depo" selected>Merkez Depo (Ana Depo)</option></select></div>
                 <div><label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Adet</label><input type="number" id="add-modal-qty" min="1" value="1" class="w-full border rounded px-3 py-2 text-lg font-bold"></div>
             </div>
             <div class="p-3 bg-gray-50 border-t flex justify-end space-x-2"><button onclick="closeStockAddModal()" class="px-4 py-2 border rounded text-sm">İptal</button><button onclick="confirmStockAdd()" class="px-4 py-2 bg-green-600 text-white rounded font-bold text-sm">Kaydet</button></div>
@@ -274,28 +296,51 @@
         let firestore = null;
         let useCloud = false;
 
+        // BEYAZ EKRANI YOK EDEN SİHİR: AÇILIŞTA ÖNCE YERELİ BAS
+        window.addEventListener('load', () => {
+            const savedData = localStorage.getItem('seviye_v8_data');
+            if(savedData) { DB = JSON.parse(savedData); } else { parseRawData(); }
+            
+            refreshAllViews(); // Ekran anında çizildi!
+            
+            // 0.5 Saniye sonra splash screen'i kaldır
+            setTimeout(() => {
+                const splash = document.getElementById('splash-screen');
+                splash.style.opacity = '0';
+                setTimeout(() => splash.style.display = 'none', 500);
+            }, 500);
+
+            // Arka planda Firebase'i başlat
+            setTimeout(() => { initFirebase(); }, 1000); 
+        });
+
         function initFirebase() {
             try {
-                firebase.initializeApp(firebaseConfig);
+                if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
                 firestore = firebase.firestore();
                 useCloud = true;
                 document.getElementById('wifi-icon').classList.replace('text-gray-500', 'text-green-500');
                 document.getElementById('status-text').innerText = "Buluta Bağlı (Canlı)";
                 document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Bulut Aktif';
                 
-                document.getElementById('db-loader').classList.remove('hidden');
+                firestore.enablePersistence().catch(err => console.log("Önbellek uyarı:", err));
+
+                // 2 SANİYE KORUMASI: Bağlanamazsa yerelde devam et
+                let isConnected = false;
+                setTimeout(() => { 
+                    if(!isConnected) document.getElementById('db-loader').classList.add('hidden'); 
+                }, 2000);
 
                 firestore.collection('seviye_stok').doc('main_data').onSnapshot((doc) => {
-                    // HATA ÇÖZÜMÜ: Eğer bulut tamamen boşsa veya ürün listesi boşsa ZORLA doldur
+                    isConnected = true;
                     if(doc.exists && doc.data().stockItems && doc.data().stockItems.length > 0) {
                         DB = doc.data();
                     } else {
-                        parseRawData(); // 277 ürünü yeniden kur
-                        if(doc.exists && doc.data().logs) {
-                            DB.logs = doc.data().logs; // Eski logları koru
-                        }
+                        parseRawData(); // Bulut boşsa yerel 277 ürünü bas
+                        if(doc.exists && doc.data().logs) DB.logs = doc.data().logs;
                         saveDB(); 
                     }
+                    localStorage.setItem('seviye_v8_data', JSON.stringify(DB)); // Yereli de güncelle
                     refreshAllViews();
                     document.getElementById('db-loader').classList.add('hidden');
                 }, (error) => {
@@ -304,42 +349,20 @@
                 });
             } catch (e) {
                 console.error("Firebase başlatılamadı: ", e);
-                initLocal();
+                useCloud = false;
+                document.getElementById('wifi-icon').classList.replace('text-green-500', 'text-gray-500');
+                document.getElementById('status-text').innerText = "Yerel Bağlantı (Sadece Sen)";
+                document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-hard-drive mr-1"></i> Yerel Kayıt';
             }
         }
 
-        function initLocal() {
-            useCloud = false;
-            document.getElementById('wifi-icon').classList.replace('text-green-500', 'text-gray-500');
-            document.getElementById('status-text').innerText = "Yerel Bağlantı (Sadece Sen)";
-            document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-hard-drive mr-1"></i> Yerel Kayıt';
-            document.getElementById('db-loader').classList.add('hidden');
-            const savedData = localStorage.getItem('seviye_v8_data');
-            if(savedData) { DB = JSON.parse(savedData); } else { parseRawData(); saveDB(); }
-            refreshAllViews();
-        }
-
-        window.onload = function() { initFirebase(); };
-
         function saveDB() {
-            if (useCloud) {
+            localStorage.setItem('seviye_v8_data', JSON.stringify(DB)); // Önce yerele kaydet
+            if (useCloud && firestore) {
                 document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-rotate mr-1 animate-spin"></i> Buluta Yazılıyor...';
                 firestore.collection('seviye_stok').doc('main_data').set(DB).then(() => {
                     document.getElementById('sync-badge').innerHTML = '<i class="fa-solid fa-check mr-1"></i> Senkronize Edildi';
-                }).catch(err => alert("Buluta kaydedilemedi: " + err));
-            } else {
-                localStorage.setItem('seviye_v8_data', JSON.stringify(DB));
-            }
-        }
-
-        // ACİL DURUM BUTONU: SIFIRLA VE 277 ÜRÜNÜ GERİ GETİR
-        function forceResetCloud() {
-            if(confirm("DİKKAT: Buluttaki ürün verileri silinecek ve Orijinal 277 Kalem Ürün Listesi sıfırdan geri yüklenecektir. (İşlem geçmişi korunacak). Onaylıyor musunuz?")) {
-                DB = { stockItems: [], logs: DB.logs };
-                parseRawData();
-                saveDB();
-                refreshAllViews();
-                alert("Sistem başarıyla sıfırlandı ve 277 ürün eklendi!");
+                }).catch(err => console.log("Buluta kaydedilemedi: ", err));
             }
         }
 
@@ -351,6 +374,7 @@
         }
 
         function parseRawData() {
+            DB.stockItems = [];
             RAW_STOCK_DATA.trim().split('\n').forEach(line => {
                 const p = line.split('|');
                 if(p.length >= 7) {
@@ -358,6 +382,16 @@
                     DB.stockItems.push({ id: 'item_' + Math.random().toString(36).substr(2, 9), categoryId: catName, name: p[1], counts: { Adsm: parseInt(p[2])||0, Maku: parseInt(p[3])||0, Sdu: parseInt(p[4])||0, Depo: parseInt(p[5])||0 }, count: parseInt(p[6])||0 });
                 }
             });
+        }
+
+        function forceResetCloud() {
+            if(confirm("DİKKAT: Buluttaki ürün verileri silinecek ve Orijinal 277 Kalem Ürün Listesi sıfırdan geri yüklenecektir. (İşlem geçmişi korunacak). Onaylıyor musunuz?")) {
+                DB.stockItems = [];
+                parseRawData();
+                saveDB();
+                refreshAllViews();
+                alert("Sistem başarıyla sıfırlandı ve 277 ürün eklendi!");
+            }
         }
 
         function refreshAllViews() {
@@ -422,6 +456,13 @@
             const file = event.target.files[0]; if(!file) return;
             const loader = document.getElementById('ai-loader'); const progress = document.getElementById('ai-progress-bar'); const status = document.getElementById('ai-status');
             loader.classList.remove('hidden'); progress.style.width = '10%'; status.innerText = "Yapay Zeka Motoru Hazırlanıyor... Lütfen Bekleyin.";
+            
+            // Eğer Tesseract daha yüklenmediyse bekle
+            if(typeof Tesseract === 'undefined') {
+                status.innerText = "Yapay Zeka Dosyaları İndiriliyor (İlk kullanım için)...";
+                await new Promise(r => setTimeout(r, 2000));
+            }
+
             try {
                 const ret = await Tesseract.recognize(file, 'tur', {
                     logger: m => {
